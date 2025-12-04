@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# OS files
+.DS_Store
+
+# Audio/transcript artifacts
+*.mp3
+*.wav
+*transcript*.txt
+*chunks/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
