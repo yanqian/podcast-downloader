@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from openai import OpenAI
-
-client = OpenAI()  # uses OPENAI_API_KEY from env
+TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 
 
 def log(msg: str):
@@ -25,6 +24,44 @@ def run_ffmpeg(cmd: list[str]):
     return result
 
 
+def require_command(name: str):
+    if shutil.which(name) is None:
+        raise RuntimeError(f"Required command not found on PATH: {name}")
+
+
+def require_openai_api_key():
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is not set")
+
+
+def get_openai_client():
+    require_openai_api_key()
+    from openai import OpenAI
+
+    return OpenAI()
+
+
+def validate_existing_chunks(work_dir: Path):
+    chunk_files = sorted(work_dir.glob("chunk_*.mp3"))
+    if not chunk_files:
+        return
+
+    expected_names = [f"chunk_{idx:03d}.mp3" for idx in range(len(chunk_files))]
+    actual_names = [path.name for path in chunk_files]
+    if actual_names != expected_names:
+        raise RuntimeError(
+            f"Existing chunk files in {work_dir} are incomplete or not sequential. "
+            "Remove the chunks directory and rerun the script."
+        )
+
+    empty_files = [path.name for path in chunk_files if path.stat().st_size == 0]
+    if empty_files:
+        raise RuntimeError(
+            f"Existing chunk files are empty: {', '.join(empty_files)}. "
+            "Remove the chunks directory and rerun the script."
+        )
+
+
 def split_into_chunks(input_path: Path, work_dir: Path, segment_seconds: int = 600):
     """
     Split the original audio into N chunks (~segment_seconds each).
@@ -33,9 +70,9 @@ def split_into_chunks(input_path: Path, work_dir: Path, segment_seconds: int = 6
     work_dir.mkdir(parents=True, exist_ok=True)
     pattern = work_dir / "chunk_%03d.mp3"
 
-    # If chunks already exist, skip splitting
     if any(work_dir.glob("chunk_*.mp3")):
-        log("Chunks already exist, skipping splitting.")
+        validate_existing_chunks(work_dir)
+        log("Chunks already exist and look complete, skipping splitting.")
         return
 
     cmd = [
@@ -86,9 +123,10 @@ def convert_chunk_to_m4a(chunk_mp3: Path) -> Path:
     return m4a_path
 
 
-def transcribe_file(audio_path: Path, model: str = "gpt-4o-mini-transcribe") -> str:
+def transcribe_file(audio_path: Path, model: str = TRANSCRIPTION_MODEL) -> str:
     """Call OpenAI audio transcription API on a single file and return text."""
     log(f"Transcribing {audio_path.name} ...")
+    client = get_openai_client()
     with audio_path.open("rb") as f:
         resp = client.audio.transcriptions.create(
             file=f,
@@ -101,7 +139,7 @@ def transcribe_file(audio_path: Path, model: str = "gpt-4o-mini-transcribe") -> 
 def transcribe_file_cached(
     audio_path: Path,
     transcript_path: Path,
-    model: str = "gpt-4o-mini-transcribe",
+    model: str = TRANSCRIPTION_MODEL,
 ) -> str:
     """Return a chunk transcript, reusing a cached text file when available."""
     if transcript_path.exists():
@@ -111,7 +149,9 @@ def transcribe_file_cached(
             return cached
 
     text = transcribe_file(audio_path, model=model).strip()
-    transcript_path.write_text(text + "\n", encoding="utf-8")
+    tmp_path = transcript_path.with_name(transcript_path.name + ".tmp")
+    tmp_path.write_text(text + "\n", encoding="utf-8")
+    tmp_path.replace(transcript_path)
     return text
 
 
@@ -136,6 +176,13 @@ def main():
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists():
         log(f"Input file not found: {input_path}")
+        sys.exit(1)
+
+    try:
+        require_command("ffmpeg")
+        require_openai_api_key()
+    except Exception as e:
+        log(str(e))
         sys.exit(1)
 
     base = input_path.stem
@@ -175,8 +222,7 @@ def main():
             all_text_parts.append(header + text.strip())
         except Exception as e:
             log(f"Error transcribing {m4a_path.name}: {e}")
-            # You can choose to continue or abort; here we continue.
-            continue
+            sys.exit(1)
 
     if not all_text_parts:
         log("No chunks were successfully transcribed.")

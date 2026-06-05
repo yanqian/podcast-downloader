@@ -1,20 +1,37 @@
 #!/usr/bin/env python3
+import argparse
+import os
 import sys
-from openai import OpenAI
 
-client = OpenAI()  # uses OPENAI_API_KEY from env
 
-if len(sys.argv) < 2:
-    print("Usage: transcribe_mp3.py <audio_file>")
-    sys.exit(1)
+TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 
-audio_path = sys.argv[1]
 
-with open(audio_path, "rb") as f:
-    transcript = client.audio.transcriptions.create(
-        file=f,
-        model="gpt-4o-mini-transcribe",  # ✅ speech-to-text model
-        response_format="text",          # ✅ return plain text
-    )
+def main():
+    parser = argparse.ArgumentParser(description="Transcribe one audio file and print the text.")
+    parser.add_argument("audio_file", help="Input audio file")
+    args = parser.parse_args()
 
-print(transcript)
+    if not os.path.exists(args.audio_file):
+        print(f"Input file not found: {args.audio_file}", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("OPENAI_API_KEY is not set", file=sys.stderr)
+        sys.exit(1)
+
+    from openai import OpenAI
+
+    client = OpenAI()
+    with open(args.audio_file, "rb") as f:
+        transcript = client.audio.transcriptions.create(
+            file=f,
+            model=TRANSCRIPTION_MODEL,
+            response_format="text",
+        )
+
+    print(transcript)
+
+
+if __name__ == "__main__":
+    main()

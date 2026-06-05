@@ -33,13 +33,13 @@ brew install ffmpeg
 Download an Apple Podcasts episode:
 
 ```bash
-python3 apple_podcast_dl.py "https://podcasts.apple.com/...?...&i=EPISODE_ID" -o .
+python3 apple_podcast_dl.py "https://podcasts.apple.com/...?...&i=EPISODE_ID" -o artifacts/downloads
 ```
 
 Transcribe a long audio file with chunking:
 
 ```bash
-python3 podcast_pipeline.py Ilya-Sutskever.mp3
+python3 podcast_pipeline.py artifacts/downloads/episode.mp3
 ```
 
 Choose a custom transcript output path:
@@ -70,4 +70,18 @@ python3 transcribe_mp3.py test.wav
 
 These files can be large and should usually stay out of Git history.
 
+Keep local audio, chunk, transcript, and sample files under `artifacts/`. That directory is ignored by Git.
+
 If a chunk transcript cache already exists and is non-empty, rerunning the pipeline reuses it instead of calling the transcription API again.
+
+If an existing chunks directory contains missing or empty chunk files, the pipeline stops and asks you to remove that chunks directory before rerunning. If any chunk transcription fails, the script exits instead of writing a partial final transcript.
+
+`apple_podcast_dl.py` does not overwrite an existing output file. Move or remove the existing file before downloading the same episode again.
+
+## Tests
+
+Run the unit tests with:
+
+```bash
+python3 -m unittest
+```

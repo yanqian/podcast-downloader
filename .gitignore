@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+.pycache/
 *.py[cod]
 *$py.class
 
@@ -11,8 +12,10 @@ venv/
 .DS_Store
 
 # Audio/transcript artifacts
+artifacts/
 *.mp3
 *.wav
+*.part
 *transcript*.txt
 *chunks/
 

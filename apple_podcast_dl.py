@@ -2,13 +2,14 @@
 import argparse
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from urllib.request import urlopen, Request
-import shutil
 
 ITUNES_LOOKUP = "https://itunes.apple.com/lookup"
+REQUEST_TIMEOUT_SECONDS = 30
 
 
 def log(msg: str):
@@ -49,7 +50,7 @@ def itunes_lookup_show(show_id: int) -> dict:
     """
     url = f"{ITUNES_LOOKUP}?id={show_id}&entity=podcastEpisode&limit=200"
     log(f"Fetching iTunes metadata for show: {url}")
-    with urlopen(url) as resp:
+    with urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
         data = resp.read()
     payload = json.loads(data.decode("utf-8"))
 
@@ -65,7 +66,7 @@ def itunes_lookup_episode(episode_id: int) -> dict:
     """
     url = f"{ITUNES_LOOKUP}?id={episode_id}"
     log(f"Fetching iTunes metadata for episode: {url}")
-    with urlopen(url) as resp:
+    with urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
         data = resp.read()
     payload = json.loads(data.decode("utf-8"))
 
@@ -110,10 +111,18 @@ def guess_extension_from_url(url: str) -> str:
 
 
 def download_file(url: str, dest: Path):
+    if dest.exists():
+        raise FileExistsError(f"Output file already exists: {dest}")
+
     log(f"Downloading audio:\n  {url}\n  -> {dest}")
     req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(req) as resp, dest.open("wb") as f:
+    tmp_dest = dest.with_name(dest.name + ".part")
+    if tmp_dest.exists():
+        tmp_dest.unlink()
+
+    with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp, tmp_dest.open("wb") as f:
         shutil.copyfileobj(resp, f)
+    tmp_dest.replace(dest)
     log("Download complete.")
 
 
