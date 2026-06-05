@@ -98,6 +98,23 @@ def transcribe_file(audio_path: Path, model: str = "gpt-4o-mini-transcribe") -> 
     return resp
 
 
+def transcribe_file_cached(
+    audio_path: Path,
+    transcript_path: Path,
+    model: str = "gpt-4o-mini-transcribe",
+) -> str:
+    """Return a chunk transcript, reusing a cached text file when available."""
+    if transcript_path.exists():
+        cached = transcript_path.read_text(encoding="utf-8").strip()
+        if cached:
+            log(f"{transcript_path.name} already exists, skipping transcription.")
+            return cached
+
+    text = transcribe_file(audio_path, model=model).strip()
+    transcript_path.write_text(text + "\n", encoding="utf-8")
+    return text
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="End-to-end podcast transcription pipeline: split -> convert -> transcribe -> merge."
@@ -151,8 +168,9 @@ def main():
     log("Starting transcription of all chunks...")
     all_text_parts: list[str] = []
     for idx, m4a_path in enumerate(sorted(chunk_m4a_files)):
+        chunk_transcript_path = m4a_path.with_suffix(".txt")
         try:
-            text = transcribe_file(m4a_path)
+            text = transcribe_file_cached(m4a_path, chunk_transcript_path)
             header = f"\n\n===== CHUNK {idx:02d} ({m4a_path.name}) =====\n\n"
             all_text_parts.append(header + text.strip())
         except Exception as e:

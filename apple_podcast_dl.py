@@ -59,6 +59,23 @@ def itunes_lookup_show(show_id: int) -> dict:
     return payload
 
 
+def itunes_lookup_episode(episode_id: int) -> dict:
+    """
+    Look up one podcast episode directly by its iTunes track id.
+    """
+    url = f"{ITUNES_LOOKUP}?id={episode_id}"
+    log(f"Fetching iTunes metadata for episode: {url}")
+    with urlopen(url) as resp:
+        data = resp.read()
+    payload = json.loads(data.decode("utf-8"))
+
+    for item in payload.get("results", []):
+        if item.get("wrapperType") == "podcastEpisode" and item.get("trackId") == episode_id:
+            return item
+
+    raise RuntimeError("iTunes lookup returned no podcast episode for this episode id")
+
+
 def find_episode_meta(payload: dict, episode_id: int) -> dict:
     """
     From a show lookup result, find the podcastEpisode whose trackId == episode_id.
@@ -122,21 +139,20 @@ def main():
         log(f"Error parsing URL: {e}")
         sys.exit(1)
 
-    # 2. Lookup show (with episodes)
+    # 2. Locate the right episode entry
     try:
-        payload = itunes_lookup_show(show_id)
+        ep = itunes_lookup_episode(episode_id)
     except Exception as e:
-        log(f"Error during iTunes lookup: {e}")
-        sys.exit(1)
+        log(f"Direct episode lookup failed: {e}")
+        log("Falling back to show lookup.")
+        try:
+            payload = itunes_lookup_show(show_id)
+            ep = find_episode_meta(payload, episode_id)
+        except Exception as fallback_error:
+            log(f"Error finding episode in API response: {fallback_error}")
+            sys.exit(1)
 
-    # 3. Locate the right episode entry
-    try:
-        ep = find_episode_meta(payload, episode_id)
-    except Exception as e:
-        log(f"Error finding episode in API response: {e}")
-        sys.exit(1)
-
-    # 4. Get audio URL from episode metadata
+    # 3. Get audio URL from episode metadata
     audio_url = ep.get("episodeUrl") or ep.get("previewUrl")
     if not audio_url:
         log(
@@ -146,7 +162,7 @@ def main():
         log(f"Available keys: {list(ep.keys())}")
         sys.exit(1)
 
-    # 5. Build filename
+    # 4. Build filename
     title = ep.get("trackName") or ep.get("collectionName") or "episode"
     filename_base = sanitize_filename(title)
     ext = guess_extension_from_url(audio_url)
@@ -155,7 +171,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     dest = output_dir / f"{filename_base}{ext}"
 
-    # 6. Download audio
+    # 5. Download audio
     try:
         download_file(audio_url, dest)
     except Exception as e:
